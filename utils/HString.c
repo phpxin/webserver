@@ -120,3 +120,41 @@ int SubString(HString *sub, HString *src, int pos, int len)
 int Index(HString *hstr, HString *sub, int pos){
     return 1;
 }
+
+
+//添加字符串到尾部
+int StrAppend(HString *hs, const char *_str) {
+    int _len = strlen(_str);
+    int _s_len = StrLength(hs);
+    if(StrEmpty(hs)){
+        StrInit(hs, _len);
+    }
+
+    
+    hs->ch = (char *)realloc(hs->ch, _s_len + _len);
+
+    strncpy(hs->ch+_s_len, _str, _len);
+
+    hs->len = _s_len + _len ;
+
+    return 1;
+}
+
+//插入字符串
+//int StrInsert(HString *hs, const char *_str) ;
+
+
+int ToString(HString *hs, char **dst){
+    if(*dst != NULL){
+        free(*dst) ;
+    }
+
+    int _len = StrLength(hs) ;
+
+    *dst = (char *) malloc( _len + 1 );
+
+    strncpy(*dst, hs->ch, _len);
+    *(*dst+_len+1) = '\0' ;
+
+    return  1;
+}

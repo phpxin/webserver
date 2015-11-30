@@ -11,19 +11,46 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 //signal
-#include<signal.h>
+#include <signal.h>
+//data structs
+#include "utils/HString.h"
 
-#define IP "192.168.1.104"
+#define IP "192.168.3.17"
 #define PORT 10002
+
+#define BS 10   ///buff size
+
+#define METHOD_GET 1 
+#define METHOD_POST 2
+
+#define WWW_ROOT "/home/public/htdocs"
 
 void read_header(int cfd) ;
 int read_line(int cfd, void **buf, int *rlen);
+void response(int);
+void sigfunc_callback(int sig);
+void sig_chld_func();
+void sig_int_func();
 
+typedef struct {
+    int method;
+    char file[1024];
+    char host[1024];
+} RequestInfo;
+
+RequestInfo req_info = {0,"\0","\0"} ;
+
+int serv_sock_f ;
 
 int main()
 {
+    printf("welcome ! \n");
+
+    signal(SIGCHLD, sigfunc_callback);
+    signal(SIGINT, sigfunc_callback);
+
     struct sockaddr_in serv_addr;
-	int serv_sock_f = socket(AF_INET, SOCK_STREAM, 0);
+	serv_sock_f = socket(AF_INET, SOCK_STREAM, 0);
 
     serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(PORT);
@@ -41,8 +68,6 @@ int main()
     } 
     //发现设置端口重用有个问题，如果中断了该端口通信（通信正在进行中），重用的端口的新程序会继续接收上次未完成的数据（然后就杯具了%>_<%）
     
-
-	
 	flag = bind(serv_sock_f, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
 
@@ -63,26 +88,108 @@ int main()
     struct sockaddr_in client_addr;
 	socklen_t client_sock_l = 0;
 	int client_sock_f = -1;
+    //while(1){
+        client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
+        pid_t pid = fork();
 
-    client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
+        if(pid==0){
+            printf("this is child process >>>>>>>>>>>>>>>... \n");
+            read_header(client_sock_f);
+            response(client_sock_f);
+            close(client_sock_f) ;
+            break;
+        }
+    //}
+    
+    printf("process exit >>>>>>>>>>>>>>>... \n");
+    
+    exit(0);
+}
 
-    /*
-
-    char buf[65535] ;
-
-    int readlen = recv(client_sock_f, buf, 65535, 0);
-
-    if(readlen>0){
-
-        int sendlen = send(client_sock_f, buf, readlen, 0);
-
+void sigfunc_callback(int sig)
+{
+    switch(sig)
+    {
+        case SIGCHLD:
+            sig_chld_func();
+            break;
+        case SIGINT:
+            sig_int_func();
+        default:
+            break;
     }
-    */
+}
 
-    read_header(client_sock_f);
+void sig_int_func()
+{
+    printf("close program ! bey-bey \n");
+    if(serv_sock_f>0)
+        close(serv_sock_f);
+}
 
-    char *html = "<h1>Hello C</h1>";
-    int html_l = strlen(html);
+void sig_chld_func()
+{
+    pid_t pid = 0 ;
+    int stat = 0 ;
+    while((pid = waitpid(pid, &stat, WNOHANG))>0){
+          printf("子进程 %d 结束 stat = %d \n", pid, stat);
+
+          if(WIFEXITED(stat))
+              printf("子进程正常结束 status %d \n", WEXITSTATUS(stat)) ;
+          else if(WIFSIGNALED(stat))
+              printf("子进程是因为一个未捕获信号而终止 signal %d \n", WTERMSIG(stat)) ;
+          else if(WIFSTOPPED(stat))
+              printf("子进程意外终止 child id %d \n", WSTOPSIG(stat)) ;
+          else
+              printf("unknow \n");
+
+     }
+    
+}
+
+void response(int client_sock_f){
+
+    if(req_info.method<=0 || strlen(req_info.file)<=0 || strlen(req_info.host)<=0){
+        return ;
+    }
+
+    char *_html = "<h1>Hello C</h1>";
+    int html_l = strlen(_html);
+
+    int html_buf_size = html_l + BS;
+
+    char *html = (char *)malloc(html_buf_size);
+    strncpy(html, _html, html_l);
+
+    if(strlen(req_info.file)>1){
+
+        char realpath[1024];
+        sprintf(realpath, "%s%s", WWW_ROOT, req_info.file);
+        printf("will read content from %s \n", realpath);
+        FILE *fp = fopen(realpath, "r");
+        if(fp==NULL){
+            perror("fopen");
+            exit(-1);
+        }
+
+        memset(html, '\0', html_buf_size);
+        html_l = 0;
+
+        int rflen = 0 ;
+        while(!feof(fp)){
+            if(html_buf_size <= html_l+BS) {
+                html_buf_size += BS+1;
+                html = (char *)realloc(html, html_buf_size);
+            }
+
+
+            rflen = fread(html+html_l, sizeof(char), BS, fp);
+            html_l += rflen;
+        }
+    }
+    
+    *(html+html_l) = '\0' ;
+    
     char *format = "HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s" ;
     int format_l = strlen(format);
 
@@ -102,18 +209,31 @@ int main()
         exit(-1) ;
     }
 
-    printf("send %d \n", __l);
-    
-    close(client_sock_f) ;
-    close(serv_sock_f);
+    printf("send %d \n", __l);    
+}
 
-    exit(0);
+void parse_line(const char *str)
+{
+    if(strncmp("GET", str, 3)==0){
+        req_info.method = METHOD_GET ;
+        char _m[16];
+        char _f[1024];
+        char _v[32];
+        sscanf(str, "%s %s %s", _m, _f, _v) ;
+        strncpy(req_info.file, _f, strlen(_f));
+    }else if(strncmp("Host", str, 4)==0){
+        char _k[16];
+        char _v[1024];
+        sscanf(str, "%s %s", _k, _v);
+        strncpy(req_info.host, _v, strlen(_v));
+    }
 }
 
 void read_header(int cfd)
 {
-    int buf_size = 10;
-    void *buf = NULL;
+    int buf_size = BS;
+    char *buf = NULL;
+    char *line = NULL;
 
     int i = 0 ;
 
@@ -121,77 +241,30 @@ void read_header(int cfd)
 
     FILE *fp = fdopen(cfd, "r") ;
 
+    HString hs = {NULL, 0};
+
     while(1){
-        buf = malloc(buf_size);
+        buf = (char *)malloc(buf_size);
+        ClearString(&hs);
 
-        while(fgets((char *)buf, buf_size, fp)){
-            if(strncmp("\r\n",(char *)buf,2)==0){
-                printf("END \n");
+        while(fgets(buf, buf_size, fp)){
+            StrAppend(&hs, buf);
+
+            int _rlen = strlen(buf);
+            if(buf[_rlen-1]=='\n')
                 break;
-            }
-
         }
         
-        printf("%s", (char *)buf);
+        ToString(&hs, &line);
+        printf("%s", line);
+        parse_line(line);
 
-        if(strncmp("\r\n",(char *)buf,2)==0){
+        if(strncmp("\r\n",buf,2)==0){
             printf("END \n");
             break;
         }
     }
 
-    /*
-    while(read_line(cfd, &buf, &rlen) > 0){
-        
-        if(strncmp("\r\n",(char *)buf,2)==0){
-            printf("END \n");
-            break;
-        }
+    printf("the request info is %d,%s,%s\n", req_info.method, req_info.file, req_info.host);
 
-        printf("%s", (char *)buf);
-
-        if(buf != NULL){
-            free(buf);
-            buf = NULL;
-        }
-
-        if(++i > 20){
-            break;
-        }
-    }
-
-    */
-}
-
-int read_line(int cfd, void **buf, int *rlen){
-    int alloc_size = 1024; 
-
-    int buf_size = alloc_size;// 缓冲区块大小 
-    *buf = malloc(buf_size) ;
-    
-
-    int i = 0;
-    char s;
-
-    while(read(cfd, &s, 1) > 0){
-        //*(buf+i) = s;
-        memcpy(*buf+i, &s, sizeof(char));
-        i++ ;
-
-        if(i>=buf_size){
-            buf_size+=alloc_size;
-            *buf = realloc(*buf, buf_size) ;
-        }
-        
-        if(s == '\n'){
-            break;
-        }
-    }
-
-    //*(buf+i) = '\0';
-    s = '\0';
-    memcpy(buf+i, &s, sizeof(char));
-    *rlen = i;
-
-    return 1;
 }
