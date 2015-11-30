@@ -129,10 +129,8 @@ int StrAppend(HString *hs, const char *_str) {
     if(StrEmpty(hs)){
         StrInit(hs, _len);
     }
-
     
-    hs->ch = (char *)realloc(hs->ch, _s_len + _len);
-
+    hs->ch = (char *)realloc(hs->ch, _s_len + _len + 10);
     strncpy(hs->ch+_s_len, _str, _len);
 
     hs->len = _s_len + _len ;

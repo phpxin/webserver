@@ -15,10 +15,10 @@
 //data structs
 #include "utils/HString.h"
 
-#define IP "192.168.3.17"
+#define IP "192.168.1.108"
 #define PORT 10002
 
-#define BS 10   ///buff size
+#define BS 1024   ///buff size
 
 #define METHOD_GET 1 
 #define METHOD_POST 2
@@ -248,14 +248,16 @@ void read_header(int cfd)
     FILE *fp = fdopen(cfd, "r") ;
 
     HString hs = {NULL, 0};
+    
+    buf = (char *)malloc(buf_size+1);
 
     while(1){
-        buf = (char *)malloc(buf_size);
+
+        memset(buf, '\0', buf_size);
         ClearString(&hs);
 
         while(fgets(buf, buf_size, fp)){
             StrAppend(&hs, buf);
-
             int _rlen = strlen(buf);
             if(buf[_rlen-1]=='\n')
                 break;
