@@ -88,7 +88,7 @@ int main()
     struct sockaddr_in client_addr;
 	socklen_t client_sock_l = 0;
 	int client_sock_f = -1;
-    //while(1){
+    while(1){
         client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
         pid_t pid = fork();
 
@@ -98,8 +98,12 @@ int main()
             response(client_sock_f);
             close(client_sock_f) ;
             break;
+        }else if(pid>0){
+            printf("accept next ... \n");
+        }else{
+            break;
         }
-    //}
+    }
     
     printf("process exit >>>>>>>>>>>>>>>... \n");
     
@@ -125,13 +129,15 @@ void sig_int_func()
     printf("close program ! bey-bey \n");
     if(serv_sock_f>0)
         close(serv_sock_f);
+
+    exit(0);
 }
 
 void sig_chld_func()
 {
     pid_t pid = 0 ;
     int stat = 0 ;
-    while((pid = waitpid(pid, &stat, WNOHANG))>0){
+    if((pid = waitpid(-1, &stat, WNOHANG))>0){
           printf("子进程 %d 结束 stat = %d \n", pid, stat);
 
           if(WIFEXITED(stat))
@@ -256,13 +262,17 @@ void read_header(int cfd)
         }
         
         ToString(&hs, &line);
-        printf("%s", line);
-        parse_line(line);
 
-        if(strncmp("\r\n",buf,2)==0){
+        if(strncmp("\r\n",line,2)==0){
             printf("END \n");
             break;
         }
+
+        if(strlen(line)<=0)
+            break;
+        
+        printf("%s", line);
+        parse_line(line);
     }
 
     printf("the request info is %d,%s,%s\n", req_info.method, req_info.file, req_info.host);
