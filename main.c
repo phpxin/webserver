@@ -15,7 +15,7 @@
 //data structs
 #include "utils/HString.h"
 
-#define IP "192.168.1.108"
+#define IP "192.168.3.17"
 #define PORT 10002
 
 #define BS 1024   ///buff size
@@ -88,12 +88,23 @@ int main()
     struct sockaddr_in client_addr;
 	socklen_t client_sock_l = 0;
 	int client_sock_f = -1;
+
+    // >>>>>>>>>> test
+    /*
+    client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
+    read_header(client_sock_f);
+    response(client_sock_f);
+    close(client_sock_f) ;
+    close(serv_sock_f);
+    */
+    // >>>>>>>>>> test end
+
+    
     while(1){
         client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
         pid_t pid = fork();
 
         if(pid==0){
-            printf("this is child process >>>>>>>>>>>>>>>... \n");
             read_header(client_sock_f);
             response(client_sock_f);
             close(client_sock_f) ;
@@ -105,7 +116,6 @@ int main()
         }
     }
     
-    printf("process exit >>>>>>>>>>>>>>>... \n");
     
     exit(0);
 }
@@ -164,6 +174,7 @@ void response(int client_sock_f){
 
     int html_buf_size = html_l + BS;
 
+    char *format = "HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s" ;
     char *html = (char *)malloc(html_buf_size);
     strncpy(html, _html, html_l);
 
@@ -174,35 +185,39 @@ void response(int client_sock_f){
         printf("will read content from %s \n", realpath);
         FILE *fp = fopen(realpath, "r");
         if(fp==NULL){
-            perror("fopen");
-            exit(-1);
-        }
+            format = "HTTP/1.1 404 Not Found\r\nContent-Length:%d\r\n\r\n%s" ;
+            _html = "<h1>Object Not Found !</h1>";
+            html_l = strlen(_html) ;
+            html = (char *)realloc(html, html_l+BS);
+            strncpy(html, _html, html_l);
 
-        memset(html, '\0', html_buf_size);
-        html_l = 0;
+        }else{
 
-        int rflen = 0 ;
-        while(!feof(fp)){
-            if(html_buf_size <= html_l+BS) {
-                html_buf_size += BS+1;
-                html = (char *)realloc(html, html_buf_size);
+            memset(html, '\0', html_buf_size);
+            html_l = 0;
+
+            int rflen = 0 ;
+            while(!feof(fp)){
+                if(html_buf_size <= html_l+BS) {
+                    html_buf_size += BS+1;
+                    html = (char *)realloc(html, html_buf_size);
+                }
+                rflen = fread(html+html_l, sizeof(char), BS, fp);
+                html_l += rflen;
             }
 
-
-            rflen = fread(html+html_l, sizeof(char), BS, fp);
-            html_l += rflen;
         }
     }
     
     *(html+html_l) = '\0' ;
     
-    char *format = "HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s" ;
     int format_l = strlen(format);
 
     size_t sss = html_l+format_l+100 ;
     char *response_buf = (char *)malloc( sss );
     memset(response_buf, '\0', sss);
-
+    
+    // 组装响应数据
     sprintf(response_buf, format, html_l, html);
     printf("%s \n", response_buf);
 
